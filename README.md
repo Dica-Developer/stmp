@@ -50,3 +50,4 @@ host = 'https://your-subsonic-host.tld'
 * a - add album or song to queue
 * p - play/pause
 * -/= volume down/volume up
+* r - add 10 random song to the queue
