@@ -38,6 +38,7 @@ password = 'password'
 
 [server]
 host = 'https://your-subsonic-host.tld'
+accept-invalid-ssl-cert = false
 ```
 
 ## Usage
