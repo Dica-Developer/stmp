@@ -19,7 +19,6 @@ type SubsonicConnection struct {
 	Password              string
 	Host                  string
 	AcceptInvalidSslCert  bool
-	directoryCache        map[string]SubsonicResponse
 }
 
 func randSeq(n int) string {
@@ -57,33 +56,72 @@ type SubsonicError struct {
 	Message string `json:"message"`
 }
 
-type SubsonicArtist struct {
-	Id         string
-	Name       string
-	AlbumCount int
-}
-
-type SubsonicDirectory struct {
-	Id       string           `json:"id"`
-	Parent   string           `json:"parent"`
-	Name     string           `json:"name"`
-	Entities []SubsonicEntity `json:"child"`
-}
-
-type SubsonicEntity struct {
+type SubsonicSong struct {
 	Id          string `json:"id"`
-	IsDirectory bool   `json:"isDir"`
-	Parent      string `json:"parent"`
-	Title       string `json:"title"`
 	Artist      string `json:"artist"`
-	Duration   int    `json:"duration"`
+	Title       string `json:"title"`
+	Duration    int    `json:"duration"`
 	Track       int    `json:"track"`
 	DiskNumber  int    `json:"diskNumber"`
 	Path        string `json:"path"`
 }
 
-type SubsonicIndexes struct {
-	Index []SubsonicIndex
+type SubsonicSongAlbum struct {
+	Songs       []SubsonicSong  `json:"song"`
+        ArtistId    string          `json:"artistId"`
+}
+
+type SubsonicSongResponse struct {
+	Status    string            `json:"status"`
+	Version   string            `json:"version"`
+	Album     SubsonicSongAlbum    `json:"album"`
+	Error     SubsonicError     `json:"error"`
+}
+
+type Song struct {
+	Response SubsonicSongResponse `json:"subsonic-response"`
+}
+
+type SubsonicAlbum struct {
+	Id          string `json:"id"`
+	Title       string `json:"name"`
+	Duration    int    `json:"duration"`
+}
+
+type SubsonicAlbumArtist struct {
+	Albums       []SubsonicAlbum `json:"album"`
+}
+
+type SubsonicAlbumResponse struct {
+	Status    string            `json:"status"`
+	Version   string            `json:"version"`
+	Artist    SubsonicAlbumArtist   `json:"artist"`
+	Error     SubsonicError     `json:"error"`
+}
+
+type Album struct {
+	Response SubsonicAlbumResponse `json:"subsonic-response"`
+}
+
+type SubsonicRandomSong struct {
+	Songs       []SubsonicSong  `json:"song"`
+}
+
+type SubsonicRandomSongsResponse struct {
+	Status    string            `json:"status"`
+	Version   string            `json:"version"`
+	RandomSongs    SubsonicRandomSong   `json:"randomSongs"`
+	Error     SubsonicError     `json:"error"`
+}
+
+type RandomSongs struct {
+	Response SubsonicRandomSongsResponse `json:"subsonic-response"`
+}
+
+type SubsonicArtist struct {
+	Id         string
+	Name       string
+	AlbumCount int
 }
 
 type SubsonicIndex struct {
@@ -91,22 +129,34 @@ type SubsonicIndex struct {
 	Artists []SubsonicArtist `json:"artist"`
 }
 
-type SubsonicResponse struct {
+type SubsonicIndexes struct {
+	Index []SubsonicIndex
+}
+
+type SubsonicArtistsResponse struct {
 	Status    string            `json:"status"`
 	Version   string            `json:"version"`
-	Indexes   SubsonicIndexes   `json:"indexes"`
-	Directory SubsonicDirectory `json:"directory"`
+	Indexes   SubsonicIndexes   `json:"artists"`
 	Error     SubsonicError     `json:"error"`
 }
 
-type responseWrapper struct {
-	Response SubsonicResponse `json:"subsonic-response"`
+type Artists struct {
+	Response SubsonicArtistsResponse `json:"subsonic-response"`
+}
+
+type SubsonicPingResponse struct {
+  Status    string            `json:"status"`
+  Version   string            `json:"version"`
+}
+
+type Ping struct {
+	Response SubsonicPingResponse `json:"subsonic-response"`
 }
 
 // requests
-func (connection *SubsonicConnection) GetServerInfo() (*SubsonicResponse, error) {
+func (connection *SubsonicConnection) GetServerInfo() (*SubsonicPingResponse, error) {
 	query := defaultQuery(connection)
-	requestUrl := connection.Host + "/rest/ping" + "?" + query.Encode()
+	requestUrl := connection.Host + "/rest/ping?" + query.Encode()
 	res, err := http.Get(requestUrl)
 
 	if err != nil {
@@ -123,7 +173,7 @@ func (connection *SubsonicConnection) GetServerInfo() (*SubsonicResponse, error)
 		return nil, err
 	}
 
-	var decodedBody responseWrapper
+	var decodedBody Ping
 	err = json.Unmarshal(responseBody, &decodedBody)
 
 	if err != nil {
@@ -133,9 +183,9 @@ func (connection *SubsonicConnection) GetServerInfo() (*SubsonicResponse, error)
 	return &decodedBody.Response, nil
 }
 
-func (connection *SubsonicConnection) GetIndexes() (*SubsonicResponse, error) {
+func (connection *SubsonicConnection) GetRandomSongs(count int) (*SubsonicRandomSongsResponse, error) {
 	query := defaultQuery(connection)
-	requestUrl := connection.Host + "/rest/getIndexes" + "?" + query.Encode()
+	requestUrl := fmt.Sprintf("%s/rest/getRandomSongs?%s&size=%d", connection.Host, query.Encode(), count)
 	res, err := http.Get(requestUrl)
 
 	if err != nil {
@@ -152,7 +202,7 @@ func (connection *SubsonicConnection) GetIndexes() (*SubsonicResponse, error) {
 		return nil, err
 	}
 
-	var decodedBody responseWrapper
+	var decodedBody RandomSongs
 	err = json.Unmarshal(responseBody, &decodedBody)
 
 	if err != nil {
@@ -162,14 +212,39 @@ func (connection *SubsonicConnection) GetIndexes() (*SubsonicResponse, error) {
 	return &decodedBody.Response, nil
 }
 
-func (connection *SubsonicConnection) GetMusicDirectory(id string) (*SubsonicResponse, error) {
-	if cachedResponse, present := connection.directoryCache[id]; present {
-		return &cachedResponse, nil
+func (connection *SubsonicConnection) GetArtists() (*SubsonicArtistsResponse, error) {
+	query := defaultQuery(connection)
+	requestUrl := connection.Host + "/rest/getArtists?" + query.Encode()
+	res, err := http.Get(requestUrl)
+
+	if err != nil {
+		return nil, err
 	}
 
+	if res.Body != nil {
+		defer res.Body.Close()
+	}
+
+	responseBody, readErr := ioutil.ReadAll(res.Body)
+
+	if readErr != nil {
+		return nil, err
+	}
+
+	var decodedBody Artists
+	err = json.Unmarshal(responseBody, &decodedBody)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &decodedBody.Response, nil
+}
+
+func (connection *SubsonicConnection) GetArtist(id string) (*SubsonicAlbumResponse, error) {
 	query := defaultQuery(connection)
 	query.Set("id", id)
-	requestUrl := connection.Host + "/rest/getMusicDirectory" + "?" + query.Encode()
+	requestUrl := connection.Host + "/rest/getArtist?" + query.Encode()
 	res, err := http.Get(requestUrl)
 
 	if err != nil {
@@ -186,16 +261,41 @@ func (connection *SubsonicConnection) GetMusicDirectory(id string) (*SubsonicRes
 		return nil, err
 	}
 
-	var decodedBody responseWrapper
+	var decodedBody Album
 	err = json.Unmarshal(responseBody, &decodedBody)
 
 	if err != nil {
 		return nil, err
 	}
 
-	// on a sucessful request, cache the response
-	if decodedBody.Response.Status == "ok" {
-		connection.directoryCache[id] = decodedBody.Response
+	return &decodedBody.Response, nil
+}
+
+func (connection *SubsonicConnection) GetAlbum(id string) (*SubsonicSongResponse, error) {
+	query := defaultQuery(connection)
+	query.Set("id", id)
+	requestUrl := connection.Host + "/rest/getAlbum?" + query.Encode()
+	res, err := http.Get(requestUrl)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if res.Body != nil {
+		defer res.Body.Close()
+	}
+
+	responseBody, readErr := ioutil.ReadAll(res.Body)
+
+	if readErr != nil {
+		return nil, err
+	}
+
+	var decodedBody Song
+	err = json.Unmarshal(responseBody, &decodedBody)
+
+	if err != nil {
+		return nil, err
 	}
 
 	return &decodedBody.Response, nil
@@ -203,13 +303,9 @@ func (connection *SubsonicConnection) GetMusicDirectory(id string) (*SubsonicRes
 
 // note that this function does not make a request, it just formats the play url
 // to pass to mpv
-func (connection *SubsonicConnection) GetPlayUrl(entity *SubsonicEntity) string {
-	// we don't want to call stream on a directory
-	if entity.IsDirectory {
-		return ""
-	}
-
+func (connection *SubsonicConnection) GetPlayUrl(song *SubsonicSong) string {
 	query := defaultQuery(connection)
-	query.Set("id", entity.Id)
-	return connection.Host + "/rest/stream" + "?" + query.Encode()
+	query.Set("id", song.Id)
+	return connection.Host + "/rest/stream?" + query.Encode()
 }
+

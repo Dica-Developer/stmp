@@ -37,9 +37,9 @@ func main() {
 		Password:             viper.GetString("auth.password"),
 		Host:                 viper.GetString("server.host"),
 		AcceptInvalidSslCert: viper.GetBool("server.accept-invalid-ssl-cert"),
-		directoryCache:       make(map[string]SubsonicResponse),
 	}
 
-	response, _ := connection.GetIndexes()
+	response, _ := connection.GetArtists()
 	InitGui(&response.Indexes.Index, connection)
 }
+
